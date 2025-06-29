@@ -8,7 +8,6 @@
     let intervalId;
     const msInYear = 365.25 * 24 * 60 * 60 * 1000;
 
-    // --- Создание элементов ---
     const widget = document.createElement('div');
     widget.classList.add('age-tracker-widget');
 
@@ -16,7 +15,6 @@
     header.classList.add('age-tracker-widget-header');
     header.textContent = '::';
 
-    // Элементы для полного вида
     const content = document.createElement('div');
     content.classList.add('age-tracker-widget-content');
     const ageLabel = document.createElement('div');
@@ -30,7 +28,6 @@
     content.appendChild(integerPartSpan);
     content.appendChild(fractionalPartSpan);
 
-    // Элементы для свернутого вида
     const minimizedContent = document.createElement('div');
     minimizedContent.classList.add('age-tracker-minimized-content');
     const minimizedAgeLabel = document.createElement('div');
@@ -41,44 +38,44 @@
     minimizedContent.appendChild(minimizedAgeLabel);
     minimizedContent.appendChild(minimizedIntegerSpan);
 
-    // Сборка виджета
     widget.appendChild(header);
     widget.appendChild(content);
-    widget.appendChild(minimizedContent); // Добавляем новый блок
+    widget.appendChild(minimizedContent);
     document.body.appendChild(widget);
 
-    // --- Логика перетаскивания и кликов ---
     let isDragging = false;
     let wasDragged = false;
-    let offsetX, offsetY;
+    let startX, startY;
+
+    function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
 
     header.addEventListener('mousedown', (e) => {
         isDragging = true;
         wasDragged = false;
         const rect = widget.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
         header.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         wasDragged = true;
         e.preventDefault();
-        document.body.style.userSelect = 'none';
         
-        let newX = e.clientX - offsetX;
-        let newY = e.clientY - offsetY;
+        let newX = e.clientX - startX;
+        let newY = e.clientY - startY;
 
-        const widgetWidth = widget.offsetWidth;
-        const widgetHeight = widget.offsetHeight;
         const viewWidth = window.innerWidth;
         const viewHeight = window.innerHeight;
+        const widgetWidth = widget.offsetWidth;
+        const widgetHeight = widget.offsetHeight;
 
-        if (newX < 0) newX = 0;
-        if (newY < 0) newY = 0;
-        if (newX + widgetWidth > viewWidth) newX = viewWidth - widgetWidth;
-        if (newY + widgetHeight > viewHeight) newY = viewHeight - widgetHeight;
+        newX = clamp(newX, 0, viewWidth - widgetWidth);
+        newY = clamp(newY, 0, viewHeight - widgetHeight);
         
         widget.style.left = `${newX}px`;
         widget.style.top = `${newY}px`;
@@ -86,12 +83,12 @@
         widget.style.bottom = 'auto';
     });
 
-    document.addEventListener('mouseup', () => {
+    document.addEventListener('mouseup', (e) => {
         if (isDragging) {
             isDragging = false;
             header.style.cursor = 'grab';
             document.body.style.userSelect = '';
-            
+
             const rect = widget.getBoundingClientRect();
             const position = {
                 left: (rect.left / window.innerWidth) * 100,
@@ -107,22 +104,41 @@
         widget.classList.toggle('minimized', isMinimized);
     });
 
-    // --- Основные функции ---
-    function applySettings(newSettings, position) {
-        settings = newSettings;
-
+    function setPosition(position) {
         if (position && typeof position.left === 'number' && typeof position.top === 'number') {
-            widget.style.left = `${position.left}%`;
-            widget.style.top = `${position.top}%`;
-            widget.style.right = 'auto';
-            widget.style.bottom = 'auto';
+            const viewWidth = window.innerWidth;
+            const viewHeight = window.innerHeight;
+            
+            let newX = (position.left / 100) * viewWidth;
+            let newY = (position.top / 100) * viewHeight;
+            
+            // Загружаем виджет, но проверяем, чтобы он не выходил за рамки
+            const widgetWidth = widget.offsetWidth || 150; // Примерная ширина по умолчанию
+            const widgetHeight = widget.offsetHeight || 70; // Примерная высота
+
+            newX = clamp(newX, 0, viewWidth - widgetWidth);
+            newY = clamp(newY, 0, viewHeight - widgetHeight);
+            
+            widget.style.left = `${newX}px`;
+            widget.style.top = `${newY}px`;
         } else {
-            widget.style.left = 'auto';
-            widget.style.top = 'auto';
             widget.style.right = '20px';
             widget.style.bottom = '20px';
+            widget.style.left = 'auto';
+            widget.style.top = 'auto';
         }
+    }
+    
+    window.addEventListener('resize', () => {
+        chrome.storage.sync.get('widgetPositionPercentage', ({ widgetPositionPercentage }) => {
+            setPosition(widgetPositionPercentage);
+        });
+    });
 
+    function applySettings(newSettings, position) {
+        settings = newSettings;
+        setPosition(position);
+        
         if (settings.fontUrl) {
             const fontId = 'custom-age-tracker-font';
             let fontLink = document.getElementById(fontId);
@@ -173,7 +189,7 @@
             
             integerPartSpan.textContent = parts[0];
             fractionalPartSpan.textContent = `.${parts[1]}`;
-            minimizedIntegerSpan.textContent = parts[0]; // Обновляем и свернутый вид
+            minimizedIntegerSpan.textContent = parts[0];
         }
         updateAge();
         intervalId = setInterval(updateAge, 50);
